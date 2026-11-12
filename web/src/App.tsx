@@ -8,6 +8,7 @@ import { ComponentFrame } from './components/ComponentFrame';
 import { DiagramPins } from './components/DiagramPins';
 import { SurgicalPacketDrawer } from './components/SurgicalPacketDrawer';
 import { SubmitModal } from './components/SubmitModal';
+import { ShortcutsModal } from './components/ShortcutsModal';
 import { Loader2 } from 'lucide-react';
 
 export function App() {
@@ -17,6 +18,7 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [isPacketDrawerOpen, setIsPacketDrawerOpen] = useState(false);
   const [isSubmitModalOpen, setIsSubmitModalOpen] = useState(false);
+  const [isShortcutsModalOpen, setIsShortcutsModalOpen] = useState(false);
   const [submitStatus, setSubmitStatus] = useState<SessionStatus>('approved');
   const [submissionComplete, setSubmissionComplete] = useState<string | null>(null);
 
@@ -60,7 +62,7 @@ export function App() {
     fetchSessions();
   }, [fetchSessions]);
 
-  // Connect WebSocket for real-time live sync
+  // Connect WebSocket for real-time live sync & file watcher push
   useEffect(() => {
     const base = getBackendBase();
     const wsUrl = base
@@ -75,13 +77,21 @@ export function App() {
           const msg = JSON.parse(event.data);
           if (msg.type === 'SESSION_CREATED' || msg.type === 'FEEDBACK_SUBMITTED') {
             fetchSessions();
+          } else if (msg.type === 'FILE_CHANGED' && msg.sessionId) {
+            // Hot-reload file content on disk without dropping existing annotations
+            setSessions((prev) =>
+              prev.map((s) =>
+                s.id === msg.sessionId ? { ...s, artifact: msg.artifact } : s
+              )
+            );
+            setSubmissionComplete('Target file modified on disk. Plan reloaded live.');
           }
         } catch {
           // Ignore parse errors
         }
       };
     } catch {
-      // WebSocket connection fallback
+      // WebSocket fallback
     }
 
     return () => {
@@ -90,6 +100,44 @@ export function App() {
   }, [fetchSessions]);
 
   const activeSession = sessions.find((s) => s.id === activeSessionId) || sessions[0] || null;
+
+  // Global Keyboard Shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      const isInput =
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.isContentEditable;
+
+      if (e.key === 'Escape') {
+        setIsPacketDrawerOpen(false);
+        setIsSubmitModalOpen(false);
+        setIsShortcutsModalOpen(false);
+        return;
+      }
+
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        setSubmitStatus(activeSession && activeSession.annotations.length > 0 ? 'changes_requested' : 'approved');
+        setIsSubmitModalOpen(true);
+        return;
+      }
+
+      if (isInput) return;
+
+      if (e.key === '?') {
+        e.preventDefault();
+        setIsShortcutsModalOpen((prev) => !prev);
+      } else if (e.key === 'p' || e.key === 'P') {
+        e.preventDefault();
+        setIsPacketDrawerOpen((prev) => !prev);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [activeSession]);
 
   const handleAddAnnotation = async (annData: Omit<Annotation, 'id' | 'createdAt'>) => {
     if (!activeSession) return;
@@ -164,6 +212,26 @@ export function App() {
     }
   };
 
+  const handleApplyLocally = async () => {
+    if (!activeSession) return;
+    const base = getBackendBase();
+    try {
+      const res = await fetch(`${base}/api/sessions/${activeSession.id}/apply`, {
+        method: 'POST',
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSubmissionComplete(data.message || 'Surgical patch applied directly to local disk.');
+        fetchSessions();
+      } else {
+        const errText = await res.text();
+        alert(`Apply error: ${errText}`);
+      }
+    } catch (e) {
+      console.error('Failed applying locally', e);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[#090d16] flex flex-col items-center justify-center text-slate-300">
@@ -195,6 +263,8 @@ export function App() {
       <Navbar
         session={activeSession}
         onOpenPacket={() => setIsPacketDrawerOpen(true)}
+        onOpenShortcuts={() => setIsShortcutsModalOpen(true)}
+        onApplyLocally={handleApplyLocally}
         onSubmit={handleOpenSubmit}
         annotationCount={activeSession ? activeSession.annotations.length : 0}
       />
@@ -282,7 +352,14 @@ export function App() {
         onClose={() => setIsSubmitModalOpen(false)}
         status={submitStatus}
         annotationCount={activeSession ? activeSession.annotations.length : 0}
+        hasLocalFile={!!(activeSession && activeSession.artifact.filePath && activeSession.artifact.filePath !== 'stdin')}
         onConfirm={handleConfirmSubmit}
+        onApplyLocally={handleApplyLocally}
+      />
+
+      <ShortcutsModal
+        isOpen={isShortcutsModalOpen}
+        onClose={() => setIsShortcutsModalOpen(false)}
       />
     </div>
   );

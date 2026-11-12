@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Session, Annotation } from '../types';
-import { X, Copy, Check, Download, Zap } from 'lucide-react';
+import { X, Copy, Check, Download, Zap, GitPullRequest } from 'lucide-react';
 
 interface SurgicalPacketDrawerProps {
   isOpen: boolean;
@@ -16,6 +16,7 @@ export const SurgicalPacketDrawer: React.FC<SurgicalPacketDrawerProps> = ({
   annotations,
 }) => {
   const [copied, setCopied] = useState(false);
+  const [copiedPR, setCopiedPR] = useState(false);
 
   if (!isOpen || !session) return null;
 
@@ -70,9 +71,24 @@ export const SurgicalPacketDrawer: React.FC<SurgicalPacketDrawerProps> = ({
     return out;
   };
 
+  // Compile formatted Markdown specifically for GitHub PR review comments
+  const compileGitHubPRMarkdown = () => {
+    let out = `### 🔍 Review Feedback on \`${session.artifact.filePath || session.title}\`\n\n`;
+    annotations.forEach((ann, idx) => {
+      out += `#### ${idx + 1}. ${ann.type === 'suggestion' ? 'Code Suggestion' : 'Revision'} (${ann.target || 'Line ' + (ann.startLine || 1)})\n`;
+      if (ann.proposed) {
+        out += `\`\`\`suggestion\n${ann.proposed.trim()}\n\`\`\`\n`;
+      }
+      if (ann.rationale || ann.comment) {
+        out += `> ${ann.rationale || ann.comment}\n\n`;
+      }
+    });
+    return out;
+  };
+
   const rawPacket = compilePacket();
 
-  // Token estimator (rough 4 characters per token heuristic)
+  // Token estimator
   let origChars = 0;
   let propChars = 0;
   annotations.forEach((a) => {
@@ -87,6 +103,12 @@ export const SurgicalPacketDrawer: React.FC<SurgicalPacketDrawerProps> = ({
     navigator.clipboard.writeText(rawPacket);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleCopyPR = () => {
+    navigator.clipboard.writeText(compileGitHubPRMarkdown());
+    setCopiedPR(true);
+    setTimeout(() => setCopiedPR(false), 2000);
   };
 
   const handleDownload = () => {
@@ -119,13 +141,13 @@ export const SurgicalPacketDrawer: React.FC<SurgicalPacketDrawerProps> = ({
 
         {/* Token Impact Estimator Bar */}
         <div className="bg-[#111a2e] px-5 py-2.5 border-b border-gray-800 flex items-center justify-between text-xs">
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
             <span className="text-gray-400">Context Impact:</span>
             <span className="font-mono text-gray-300">
-              Original: <strong className="text-slate-200">{origTokens}</strong> tok
+              Orig: <strong className="text-slate-200">{origTokens}</strong> tok
             </span>
             <span className="font-mono text-gray-300">
-              Proposed: <strong className="text-slate-200">{propTokens}</strong> tok
+              Prop: <strong className="text-slate-200">{propTokens}</strong> tok
             </span>
             <span
               className={`font-mono font-medium px-1.5 py-0.5 rounded ${
@@ -138,7 +160,16 @@ export const SurgicalPacketDrawer: React.FC<SurgicalPacketDrawerProps> = ({
             </span>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={handleCopyPR}
+              className="flex items-center gap-1 px-2.5 py-1 rounded bg-gray-800 hover:bg-gray-700 text-slate-200 transition"
+              title="Copy formatted for GitHub Pull Request review comments"
+            >
+              {copiedPR ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <GitPullRequest className="w-3.5 h-3.5 text-emerald-400" />}
+              <span>{copiedPR ? 'PR Copied' : 'GitHub PR'}</span>
+            </button>
+
             <button
               onClick={handleCopy}
               className="flex items-center gap-1 px-2.5 py-1 rounded bg-gray-800 hover:bg-gray-700 text-slate-200 transition"
@@ -146,6 +177,7 @@ export const SurgicalPacketDrawer: React.FC<SurgicalPacketDrawerProps> = ({
               {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
               <span>{copied ? 'Copied' : 'Copy'}</span>
             </button>
+
             <button
               onClick={handleDownload}
               className="flex items-center gap-1 px-2.5 py-1 rounded bg-gray-800 hover:bg-gray-700 text-slate-200 transition"

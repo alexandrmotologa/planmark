@@ -10,7 +10,11 @@ Terminal coding agents generate detailed plans and multi-file patches, but revie
 
 - Single standalone executable written in Go with low memory consumption (under 15 MB RAM) and startup time under 10 milliseconds.
 - Deterministic surgical feedback blocks (`ORIGINAL`, `PROPOSED`, `RATIONALE`) and line-anchored code suggestions instead of unstructured text prompts.
+- Live File Watcher (`fsnotify`) with automatic WebSocket synchronization: detects disk modifications by background agents and refreshes the canvas in real time.
+- Direct "Apply Locally & Approve" atomic mutation engine: rewrite source files directly on disk to save agent token consumption.
 - Multi-artifact support covering Markdown specification plans, unified git diffs, sandboxed HTML component previews, and interactive Mermaid diagrams.
+- Interactive Markdown task checklists (`- [ ]`, `- [x]`) and word-level semantic diff previews.
+- Voice dictation via native Web Speech API and agent guardrail presets (`Single-Binary`, `Context & Timeouts`, `TDD First`).
 - Multi-agent session inbox to handle parallel agent review requests asynchronously.
 - Universal integration through CLI pipe mode, repository hooks, and Model Context Protocol (MCP) endpoints.
 
@@ -59,6 +63,16 @@ planmark inbox
 ```
 
 Runs a persistent local review inbox where background agents post review requests through HTTP or Unix socket endpoints.
+
+## Keyboard Shortcuts
+
+Press `?` in the browser canvas to view all shortcuts:
+- `?`: Toggle keyboard shortcuts modal
+- `p`: Toggle surgical patch drawer
+- `Ctrl + Enter` / `Cmd + Enter`: Open feedback submit and dispatch dialog
+- `Esc`: Close any active modal or drawer
+- `1 / 2 / 3`: Switch device viewports in HTML mockup mode
+- `u / s`: Toggle Unified vs. Split view in Git Diff mode
 
 ## Surgical Patch Format
 

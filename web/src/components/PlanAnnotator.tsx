@@ -1,6 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Annotation } from '../types';
-import { MessageSquare, Edit3, Trash2, Check, X, CornerDownRight } from 'lucide-react';
+import { MessageSquare, Edit3, Trash2, Check, X, CornerDownRight, CheckSquare, Square, SlidersHorizontal } from 'lucide-react';
+import { VoiceDictationButton } from './VoiceDictationButton';
+import { GuardrailChips } from './GuardrailChips';
+import { computeWordDiff } from '../utils/wordDiff';
 
 interface PlanAnnotatorProps {
   content: string;
@@ -23,13 +26,18 @@ export const PlanAnnotator: React.FC<PlanAnnotatorProps> = ({
   onAddAnnotation,
   onDeleteAnnotation,
 }) => {
-  const lines = content.split('\n');
+  const [lines, setLines] = useState<string[]>(content.split('\n'));
   const [selection, setSelection] = useState<SelectionState | null>(null);
   const [activeDialog, setActiveDialog] = useState<'replacement' | 'comment' | null>(null);
   const [proposedText, setProposedText] = useState('');
   const [rationale, setRationale] = useState('');
   const [commentText, setCommentText] = useState('');
+  const [density, setDensity] = useState<'comfortable' | 'compact'>('comfortable');
   const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setLines(content.split('\n'));
+  }, [content]);
 
   // Clear selection when clicking outside
   useEffect(() => {
@@ -55,14 +63,12 @@ export const PlanAnnotator: React.FC<PlanAnnotatorProps> = ({
     const text = sel.toString().trim();
     if (!text) return;
 
-    // Detect which line numbers were selected
     const range = sel.getRangeAt(0);
     const rect = range.getBoundingClientRect();
 
     let startLine = 1;
     let endLine = 1;
 
-    // Find line elements in DOM
     const startNode = range.startContainer.parentElement?.closest('[data-line]');
     const endNode = range.endContainer.parentElement?.closest('[data-line]');
 
@@ -137,7 +143,28 @@ export const PlanAnnotator: React.FC<PlanAnnotatorProps> = ({
     window.getSelection()?.removeAllRanges();
   };
 
-  // Check if a line is annotated
+  // Toggle markdown task checkbox line
+  const handleToggleCheckbox = (lineNum: number, currentText: string, isChecked: boolean) => {
+    const updatedLine = isChecked
+      ? currentText.replace(/\[[xX]\]/, '[ ]')
+      : currentText.replace(/\[\s*\]/, '[x]');
+
+    setLines((prev) => {
+      const next = [...prev];
+      next[lineNum - 1] = updatedLine;
+      return next;
+    });
+
+    onAddAnnotation({
+      type: 'comment',
+      startLine: lineNum,
+      endLine: lineNum,
+      comment: isChecked
+        ? `Task marked as uncompleted / pending verification`
+        : `Task approved and verified as completed`,
+    });
+  };
+
   const getLineAnnotation = (lineNum: number) => {
     return annotations.find(
       (a) => a.startLine && a.endLine && lineNum >= a.startLine && lineNum <= a.endLine
@@ -148,15 +175,27 @@ export const PlanAnnotator: React.FC<PlanAnnotatorProps> = ({
     <div className="flex h-[calc(100vh-3.5rem)] relative overflow-hidden" ref={containerRef}>
       {/* Main Document Viewer */}
       <div
-        className="flex-1 overflow-y-auto p-6 md:p-8 font-mono text-sm leading-relaxed"
+        className="flex-1 overflow-y-auto p-4 md:p-6 font-mono text-sm leading-relaxed"
         onMouseUp={handleMouseUp}
       >
-        <div className="max-w-4xl mx-auto bg-[#0d1424] border border-gray-800 rounded-lg p-6 shadow-xl">
+        <div className="max-w-4xl mx-auto bg-[#0d1424] border border-gray-800 rounded-lg p-5 shadow-xl">
+          {/* Header Bar */}
           <div className="mb-4 pb-3 border-b border-gray-800 flex items-center justify-between text-xs text-gray-400">
-            <span>Highlight text to leave comments, surgical replacement blocks, or deletions.</span>
-            <span className="font-mono">{lines.length} lines</span>
+            <span>Highlight text to leave comments, surgical replacement blocks, or strikes.</span>
+            <div className="flex items-center gap-3">
+              <span className="font-mono">{lines.length} lines</span>
+              <button
+                onClick={() => setDensity((d) => (d === 'comfortable' ? 'compact' : 'comfortable'))}
+                className="flex items-center gap-1 px-2 py-0.5 rounded bg-gray-800 hover:bg-gray-700 text-slate-300 transition"
+                title="Toggle visual line density"
+              >
+                <SlidersHorizontal className="w-3 h-3" />
+                <span className="capitalize text-[11px]">{density}</span>
+              </button>
+            </div>
           </div>
 
+          {/* Line Listing */}
           <div className="divide-y divide-gray-800/40">
             {lines.map((line, idx) => {
               const lineNum = idx + 1;
@@ -165,22 +204,54 @@ export const PlanAnnotator: React.FC<PlanAnnotatorProps> = ({
 
               if (ann) {
                 if (ann.type === 'replacement') bgClass = 'bg-amber-950/30 border-l-2 border-amber-500';
-                else if (ann.type === 'deletion') bgClass = 'bg-rose-950/30 border-l-2 border-rose-500 line-through text-gray-500';
+                else if (ann.type === 'deletion')
+                  bgClass = 'bg-rose-950/30 border-l-2 border-rose-500 line-through text-gray-500';
                 else if (ann.type === 'comment') bgClass = 'bg-blue-950/30 border-l-2 border-blue-500';
               }
+
+              // Check for task checklist markdown: - [ ] or - [x]
+              const taskMatch = line.match(/^(\s*[-*]\s+)\[([ xX])\]\s*(.*)$/);
+              const isTask = !!taskMatch;
+              const isChecked = taskMatch ? taskMatch[2].toLowerCase() === 'x' : false;
 
               return (
                 <div
                   key={lineNum}
                   data-line={lineNum}
-                  className={`flex items-start py-0.5 px-2 rounded transition ${bgClass}`}
+                  className={`flex items-start rounded transition ${
+                    density === 'compact' ? 'py-0 px-1 text-xs' : 'py-0.5 px-2 text-sm'
+                  } ${bgClass}`}
                 >
                   <span className="w-10 shrink-0 text-right pr-4 text-xs text-gray-400 select-none font-mono">
                     {lineNum}
                   </span>
-                  <span className="flex-1 whitespace-pre-wrap break-words text-slate-200">
-                    {line || '\u00A0'}
-                  </span>
+
+                  {isTask ? (
+                    <div className="flex items-center gap-2 flex-1">
+                      <button
+                        type="button"
+                        onClick={() => handleToggleCheckbox(lineNum, line, isChecked)}
+                        className="text-blue-400 hover:text-blue-300 transition shrink-0"
+                      >
+                        {isChecked ? (
+                          <CheckSquare className="w-4 h-4 text-emerald-400" />
+                        ) : (
+                          <Square className="w-4 h-4 text-gray-400" />
+                        )}
+                      </button>
+                      <span
+                        className={`whitespace-pre-wrap break-words ${
+                          isChecked ? 'line-through text-gray-400' : 'text-slate-200'
+                        }`}
+                      >
+                        {taskMatch[3]}
+                      </span>
+                    </div>
+                  ) : (
+                    <span className="flex-1 whitespace-pre-wrap break-words text-slate-200">
+                      {line || '\u00A0'}
+                    </span>
+                  )}
                 </div>
               );
             })}
@@ -218,11 +289,11 @@ export const PlanAnnotator: React.FC<PlanAnnotatorProps> = ({
         </div>
       )}
 
-      {/* Replacement Modal / Popover */}
+      {/* Replacement Modal */}
       {selection && activeDialog === 'replacement' && (
         <div
-          className="fixed z-50 transform -translate-x-1/2 bg-[#172033] border border-blue-500/50 rounded-xl shadow-2xl p-4 w-96 text-xs text-slate-200 animate-in fade-in zoom-in-95 duration-150"
-          style={{ left: `${selection.x}px`, top: `${Math.max(20, selection.y - 120)}px` }}
+          className="fixed z-50 transform -translate-x-1/2 bg-[#172033] border border-blue-500/50 rounded-xl shadow-2xl p-4 w-[420px] text-xs text-slate-200 animate-in fade-in zoom-in-95 duration-150"
+          style={{ left: `${selection.x}px`, top: `${Math.max(20, selection.y - 140)}px` }}
         >
           <div className="flex items-center justify-between pb-2 mb-2 border-b border-gray-700">
             <span className="font-semibold text-blue-400 flex items-center gap-1.5">
@@ -245,8 +316,14 @@ export const PlanAnnotator: React.FC<PlanAnnotatorProps> = ({
                 placeholder="Enter proposed revision..."
               />
             </div>
+
             <div>
-              <label className="block text-[11px] text-gray-400 mb-1">Rationale (For Agent Context):</label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-[11px] text-gray-400">Rationale (Agent Context):</label>
+                <VoiceDictationButton
+                  onTranscript={(txt) => setRationale((prev) => (prev ? `${prev} ${txt}` : txt))}
+                />
+              </div>
               <input
                 type="text"
                 value={rationale}
@@ -255,6 +332,13 @@ export const PlanAnnotator: React.FC<PlanAnnotatorProps> = ({
                 placeholder="Why should the agent make this change?"
               />
             </div>
+
+            {/* Guardrail Chips */}
+            <GuardrailChips
+              onSelect={(rule) =>
+                setRationale((prev) => (prev ? `${prev}. ${rule}` : rule))
+              }
+            />
 
             <div className="flex justify-end gap-2 pt-1">
               <button
@@ -275,7 +359,7 @@ export const PlanAnnotator: React.FC<PlanAnnotatorProps> = ({
         </div>
       )}
 
-      {/* Comment Modal / Popover */}
+      {/* Comment Modal */}
       {selection && activeDialog === 'comment' && (
         <div
           className="fixed z-50 transform -translate-x-1/2 bg-[#172033] border border-blue-500/50 rounded-xl shadow-2xl p-4 w-80 text-xs text-slate-200 animate-in fade-in zoom-in-95 duration-150"
@@ -292,6 +376,11 @@ export const PlanAnnotator: React.FC<PlanAnnotatorProps> = ({
           </div>
 
           <div className="space-y-3">
+            <div className="flex items-center justify-end">
+              <VoiceDictationButton
+                onTranscript={(txt) => setCommentText((prev) => (prev ? `${prev} ${txt}` : txt))}
+              />
+            </div>
             <textarea
               value={commentText}
               onChange={(e) => setCommentText(e.target.value)}
@@ -320,7 +409,7 @@ export const PlanAnnotator: React.FC<PlanAnnotatorProps> = ({
       )}
 
       {/* Annotations Sidebar */}
-      <div className="w-80 border-l border-gray-800 bg-[#090e1a] p-4 overflow-y-auto hidden lg:block">
+      <div className="w-84 border-l border-gray-800 bg-[#090e1a] p-4 overflow-y-auto hidden lg:block">
         <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
           Annotations ({annotations.length})
         </h4>
@@ -360,12 +449,33 @@ export const PlanAnnotator: React.FC<PlanAnnotatorProps> = ({
 
                 {ann.type === 'replacement' && (
                   <div className="space-y-1.5 mt-2">
-                    <div className="bg-rose-950/40 text-rose-300 p-1.5 rounded font-mono text-[11px] truncate">
-                      - {ann.original}
+                    {/* Word-level diff visualizer */}
+                    <div className="p-2 rounded bg-[#0a0f1d] border border-gray-800 text-[11px] font-mono leading-relaxed space-y-1">
+                      <div className="text-rose-300">
+                        - {ann.original}
+                      </div>
+                      <div className="text-emerald-300">
+                        + {ann.proposed}
+                      </div>
+                      <div className="pt-1 border-t border-gray-800/60 text-[10px] text-gray-400">
+                        Word diff:{' '}
+                        {computeWordDiff(ann.original || '', ann.proposed || '').map((part, pIdx) => (
+                          <span
+                            key={pIdx}
+                            className={
+                              part.type === 'added'
+                                ? 'bg-emerald-950 text-emerald-300 px-0.5 rounded'
+                                : part.type === 'removed'
+                                ? 'bg-rose-950 text-rose-300 px-0.5 rounded line-through'
+                                : 'text-gray-400'
+                            }
+                          >
+                            {part.value}
+                          </span>
+                        ))}
+                      </div>
                     </div>
-                    <div className="bg-emerald-950/40 text-emerald-300 p-1.5 rounded font-mono text-[11px] truncate">
-                      + {ann.proposed}
-                    </div>
+
                     {ann.rationale && (
                       <p className="text-gray-400 text-[11px] flex items-center gap-1 pt-1">
                         <CornerDownRight className="w-3 h-3 text-gray-400 shrink-0" />

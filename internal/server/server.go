@@ -7,6 +7,8 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -33,6 +35,7 @@ type Server struct {
 	upgrader   websocket.Upgrader
 	clientsMu  sync.Mutex
 	clients    map[*websocket.Conn]bool
+	watcher    *FileWatcher
 }
 
 func NewServer(cfg ServerConfig) *Server {
@@ -46,10 +49,27 @@ func NewServer(cfg ServerConfig) *Server {
 		},
 		clients: make(map[*websocket.Conn]bool),
 	}
+
+	fw, err := NewFileWatcher(func(changedPath string) {
+		s.handleDiskFileChanged(changedPath)
+	})
+	if err == nil {
+		s.watcher = fw
+	}
+
 	return s
 }
 
 func (s *Server) Start() error {
+	// Start watching files for already registered sessions
+	if s.watcher != nil {
+		for _, sess := range s.cfg.Store.List() {
+			if sess.Artifact.FilePath != "" && sess.Artifact.FilePath != "stdin" && sess.Artifact.FilePath != "diff.patch" {
+				_ = s.watcher.Watch(sess.Artifact.FilePath)
+			}
+		}
+	}
+
 	mux := http.NewServeMux()
 
 	// API Routes
@@ -60,6 +80,7 @@ func (s *Server) Start() error {
 	mux.HandleFunc("POST /api/sessions/{id}/annotations", s.handleAddAnnotation)
 	mux.HandleFunc("DELETE /api/sessions/{id}/annotations/{annId}", s.handleDeleteAnnotation)
 	mux.HandleFunc("POST /api/sessions/{id}/feedback", s.handleSubmitFeedback)
+	mux.HandleFunc("POST /api/sessions/{id}/apply", s.handleApplyLocally)
 	mux.HandleFunc("GET /api/sessions/{id}/sandbox", s.handleSandboxPreview)
 	mux.HandleFunc("GET /ws", s.handleWebSocket)
 
@@ -101,6 +122,9 @@ func (s *Server) Start() error {
 }
 
 func (s *Server) Shutdown() error {
+	if s.watcher != nil {
+		_ = s.watcher.Stop()
+	}
 	if s.httpServer != nil {
 		return s.httpServer.Close()
 	}
@@ -146,6 +170,11 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 	s.enrichArtifact(&session.Artifact)
 
 	created := s.cfg.Store.Create(&session)
+
+	if s.watcher != nil && created.Artifact.FilePath != "" {
+		_ = s.watcher.Watch(created.Artifact.FilePath)
+	}
+
 	s.broadcast(map[string]any{
 		"type":    "SESSION_CREATED",
 		"session": created,
@@ -225,7 +254,6 @@ func (s *Server) handleSubmitFeedback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Update session status and annotations if provided
 	if len(sub.Annotations) > 0 {
 		session.Annotations = sub.Annotations
 	}
@@ -233,7 +261,6 @@ func (s *Server) handleSubmitFeedback(w http.ResponseWriter, r *http.Request) {
 	session.Summary = sub.Summary
 	s.cfg.Store.Update(session)
 
-	// Compile surgical patch packet
 	packet := s.cfg.Compiler.CompilePacket(session, &sub)
 
 	s.broadcast(map[string]any{
@@ -242,16 +269,106 @@ func (s *Server) handleSubmitFeedback(w http.ResponseWriter, r *http.Request) {
 		"packet":    packet,
 	})
 
-	// If a CLI completion channel is waiting, deliver the packet
 	if s.cfg.DoneChan != nil {
 		go func() {
-			time.Sleep(50 * time.Millisecond) // small grace for HTTP response to flush
+			time.Sleep(50 * time.Millisecond)
 			s.cfg.DoneChan <- packet
 		}()
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(packet)
+}
+
+func (s *Server) handleApplyLocally(w http.ResponseWriter, r *http.Request) {
+	sessionId := r.PathValue("id")
+	session, ok := s.cfg.Store.Get(sessionId)
+	if !ok {
+		http.Error(w, "session not found", http.StatusNotFound)
+		return
+	}
+
+	filePath := session.Artifact.FilePath
+	if filePath == "" || filePath == "stdin" {
+		http.Error(w, "session has no persistent file path to mutate", http.StatusBadRequest)
+		return
+	}
+
+	applier := format.NewFileApplier()
+	updatedContent, err := applier.ApplyToFile(filePath, session.Annotations)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("failed applying modifications: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Update session content in memory
+	session.Artifact.Content = updatedContent
+	s.enrichArtifact(&session.Artifact)
+	session.Status = types.StatusApproved
+	session.Summary = fmt.Sprintf("Applied %d surgical modifications locally to %s", len(session.Annotations), filepath.Base(filePath))
+	s.cfg.Store.Update(session)
+
+	packet := s.cfg.Compiler.CompilePacket(session, &types.FeedbackSubmission{
+		Status:      types.StatusApproved,
+		Summary:     session.Summary,
+		Annotations: session.Annotations,
+	})
+
+	s.broadcast(map[string]any{
+		"type":      "FEEDBACK_SUBMITTED",
+		"sessionId": sessionId,
+		"packet":    packet,
+	})
+
+	if s.cfg.DoneChan != nil {
+		go func() {
+			time.Sleep(50 * time.Millisecond)
+			s.cfg.DoneChan <- packet
+		}()
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"status":  "applied",
+		"file":    filePath,
+		"message": session.Summary,
+		"packet":  packet,
+	})
+}
+
+func (s *Server) handleDiskFileChanged(changedPath string) {
+	absChanged, err := filepath.Abs(changedPath)
+	if err != nil {
+		absChanged = changedPath
+	}
+
+	for _, sess := range s.cfg.Store.List() {
+		if sess.Artifact.FilePath == "" {
+			continue
+		}
+		sessAbs, err := filepath.Abs(sess.Artifact.FilePath)
+		if err != nil {
+			sessAbs = sess.Artifact.FilePath
+		}
+
+		if strings.EqualFold(sessAbs, absChanged) {
+			contentBytes, err := os.ReadFile(sess.Artifact.FilePath)
+			if err != nil {
+				continue
+			}
+
+			sess.Artifact.Content = string(contentBytes)
+			s.enrichArtifact(&sess.Artifact)
+			s.cfg.Store.Update(sess)
+
+			s.broadcast(map[string]any{
+				"type":      "FILE_CHANGED",
+				"sessionId": sess.ID,
+				"artifact":  sess.Artifact,
+			})
+			break
+		}
+	}
 }
 
 func (s *Server) handleSandboxPreview(w http.ResponseWriter, r *http.Request) {

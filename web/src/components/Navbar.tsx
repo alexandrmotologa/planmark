@@ -9,12 +9,16 @@ import {
   CheckCircle2, 
   XCircle, 
   Code2, 
-  Bot 
+  Bot,
+  Keyboard,
+  Wrench
 } from 'lucide-react';
 
 interface NavbarProps {
   session: Session | null;
   onOpenPacket: () => void;
+  onOpenShortcuts: () => void;
+  onApplyLocally: () => void;
   onSubmit: (status: 'approved' | 'changes_requested' | 'rejected') => void;
   annotationCount: number;
 }
@@ -22,6 +26,8 @@ interface NavbarProps {
 export const Navbar: React.FC<NavbarProps> = ({
   session,
   onOpenPacket,
+  onOpenShortcuts,
+  onApplyLocally,
   onSubmit,
   annotationCount,
 }) => {
@@ -39,6 +45,8 @@ export const Navbar: React.FC<NavbarProps> = ({
         return <FileText className="w-4 h-4 text-gray-400" />;
     }
   };
+
+  const hasLocalFile = session && session.artifact.filePath && session.artifact.filePath !== 'stdin';
 
   return (
     <header className="h-14 border-b border-gray-800 bg-[#0c1220] px-4 flex items-center justify-between sticky top-0 z-40">
@@ -72,9 +80,17 @@ export const Navbar: React.FC<NavbarProps> = ({
 
       <div className="flex items-center gap-2">
         <button
+          onClick={onOpenShortcuts}
+          className="p-1.5 text-gray-400 hover:text-white rounded bg-gray-900 hover:bg-gray-800 border border-gray-800 transition"
+          title="Keyboard shortcuts (?)"
+        >
+          <Keyboard className="w-4 h-4" />
+        </button>
+
+        <button
           onClick={onOpenPacket}
           className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-300 bg-gray-900 hover:bg-gray-800 hover:text-white rounded border border-gray-700 transition"
-          title="Preview the generated surgical patch blocks"
+          title="Preview the generated surgical patch blocks (P)"
         >
           <Code2 className="w-3.5 h-3.5 text-blue-400" />
           <span>Surgical Patch</span>
@@ -84,6 +100,17 @@ export const Navbar: React.FC<NavbarProps> = ({
             </span>
           )}
         </button>
+
+        {hasLocalFile && annotationCount > 0 && (
+          <button
+            onClick={onApplyLocally}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-emerald-300 bg-emerald-950/50 hover:bg-emerald-900/60 rounded border border-emerald-700/60 transition"
+            title="Atomically apply all surgical replacements directly to the local file on disk"
+          >
+            <Wrench className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Apply to File</span>
+          </button>
+        )}
 
         <button
           onClick={() => onSubmit('rejected')}

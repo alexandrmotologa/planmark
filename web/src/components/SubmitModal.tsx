@@ -1,13 +1,15 @@
 import React, { useState } from 'react';
 import { SessionStatus } from '../types';
-import { CheckCircle2, AlertTriangle, XCircle, Send, X } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, XCircle, Send, X, Wrench } from 'lucide-react';
 
 interface SubmitModalProps {
   isOpen: boolean;
   onClose: () => void;
   status: SessionStatus;
   annotationCount: number;
+  hasLocalFile: boolean;
   onConfirm: (summary: string) => void;
+  onApplyLocally: () => void;
 }
 
 export const SubmitModal: React.FC<SubmitModalProps> = ({
@@ -15,7 +17,9 @@ export const SubmitModal: React.FC<SubmitModalProps> = ({
   onClose,
   status,
   annotationCount,
+  hasLocalFile,
   onConfirm,
+  onApplyLocally,
 }) => {
   const [summary, setSummary] = useState('');
 
@@ -89,27 +93,46 @@ export const SubmitModal: React.FC<SubmitModalProps> = ({
             </p>
           </div>
 
-          <div className="flex justify-end gap-2 pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-3.5 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 font-medium transition"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className={`px-4 py-1.5 rounded-lg font-medium text-white flex items-center gap-1.5 transition ${
-                status === 'approved'
-                  ? 'bg-emerald-600 hover:bg-emerald-500'
-                  : status === 'rejected'
-                  ? 'bg-rose-600 hover:bg-rose-500'
-                  : 'bg-blue-600 hover:bg-blue-500'
-              }`}
-            >
-              <Send className="w-3.5 h-3.5" />
-              <span>Confirm & Dispatch</span>
-            </button>
+          <div className="flex items-center justify-between pt-2">
+            <div>
+              {hasLocalFile && annotationCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onApplyLocally();
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-950/60 hover:bg-emerald-900/70 text-emerald-300 font-medium border border-emerald-700/50 transition"
+                  title="Apply changes directly to file on disk without waiting for agent"
+                >
+                  <Wrench className="w-3.5 h-3.5" />
+                  <span>Apply to Disk</span>
+                </button>
+              )}
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-3.5 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 font-medium transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className={`px-4 py-1.5 rounded-lg font-medium text-white flex items-center gap-1.5 transition ${
+                  status === 'approved'
+                    ? 'bg-emerald-600 hover:bg-emerald-500'
+                    : status === 'rejected'
+                    ? 'bg-rose-600 hover:bg-rose-500'
+                    : 'bg-blue-600 hover:bg-blue-500'
+                }`}
+              >
+                <Send className="w-3.5 h-3.5" />
+                <span>Confirm & Dispatch</span>
+              </button>
+            </div>
           </div>
         </form>
       </div>
