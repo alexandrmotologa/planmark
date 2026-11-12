@@ -33,6 +33,7 @@ export const PlanAnnotator: React.FC<PlanAnnotatorProps> = ({
   const [rationale, setRationale] = useState('');
   const [commentText, setCommentText] = useState('');
   const [density, setDensity] = useState<'comfortable' | 'compact'>('comfortable');
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -181,9 +182,18 @@ export const PlanAnnotator: React.FC<PlanAnnotatorProps> = ({
         <div className="max-w-4xl mx-auto bg-[#0d1424] border border-gray-800 rounded-lg p-5 shadow-xl">
           {/* Header Bar */}
           <div className="mb-4 pb-3 border-b border-gray-800 flex items-center justify-between text-xs text-gray-400">
-            <span>Highlight text to leave comments, surgical replacement blocks, or strikes.</span>
-            <div className="flex items-center gap-3">
-              <span className="font-mono">{lines.length} lines</span>
+            <span className="truncate pr-2">Highlight text to leave comments, surgical replacements, or strikes.</span>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setIsMobileSidebarOpen((v) => !v)}
+                className="lg:hidden flex items-center gap-1 px-2 py-0.5 rounded bg-gray-800 hover:bg-gray-700 text-blue-400 text-[11px] border border-gray-700 transition"
+              >
+                <MessageSquare className="w-3 h-3" />
+                <span>Notes ({annotations.length})</span>
+              </button>
+
+              <span className="font-mono hidden sm:inline">{lines.length} lines</span>
               <button
                 onClick={() => setDensity((d) => (d === 'comfortable' ? 'compact' : 'comfortable'))}
                 className="flex items-center gap-1 px-2 py-0.5 rounded bg-gray-800 hover:bg-gray-700 text-slate-300 transition"
@@ -409,10 +419,26 @@ export const PlanAnnotator: React.FC<PlanAnnotatorProps> = ({
       )}
 
       {/* Annotations Sidebar */}
-      <div className="w-84 border-l border-gray-800 bg-[#090e1a] p-4 overflow-y-auto hidden lg:block">
-        <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-          Annotations ({annotations.length})
-        </h4>
+      <div
+        className={`border-l border-gray-800 bg-[#090e1a] p-4 overflow-y-auto transition-all duration-200 ${
+          isMobileSidebarOpen
+            ? 'fixed inset-y-14 right-0 z-40 w-80 shadow-2xl block border-gray-750'
+            : 'hidden lg:block w-84'
+        }`}
+      >
+        <div className="flex items-center justify-between mb-3">
+          <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+            Annotations ({annotations.length})
+          </h4>
+          {isMobileSidebarOpen && (
+            <button
+              onClick={() => setIsMobileSidebarOpen(false)}
+              className="lg:hidden p-1 text-gray-400 hover:text-white rounded"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
 
         {annotations.length === 0 ? (
           <p className="text-xs text-gray-400 italic">No annotations added yet. Select text in the document to begin.</p>

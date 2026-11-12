@@ -22,6 +22,8 @@ export const DiffReviewer: React.FC<DiffReviewerProps> = ({
   const [suggestionLine, setSuggestionLine] = useState<{ file: string; line: number } | null>(null);
   const [suggestionCode, setSuggestionCode] = useState('');
   const [suggestionComment, setSuggestionComment] = useState('');
+  const [isMobileFileTreeOpen, setIsMobileFileTreeOpen] = useState(false);
+  const [isMobileSuggestionsOpen, setIsMobileSuggestionsOpen] = useState(false);
 
   // Fallback if parsed diff is not populated
   const files: DiffFile[] = parsedDiff?.files || [
@@ -60,15 +62,31 @@ export const DiffReviewer: React.FC<DiffReviewerProps> = ({
   return (
     <div className="flex h-[calc(100vh-3.5rem)] relative overflow-hidden bg-[#090d16]">
       {/* File Tree Sidebar */}
-      <div className="w-64 border-r border-gray-800 bg-[#0c1220] flex flex-col shrink-0">
+      <div
+        className={`border-r border-gray-800 bg-[#0c1220] flex flex-col shrink-0 transition-all ${
+          isMobileFileTreeOpen
+            ? 'fixed inset-y-14 left-0 z-40 w-64 shadow-2xl block'
+            : 'hidden md:flex w-64'
+        }`}
+      >
         <div className="p-3 border-b border-gray-800 flex items-center justify-between text-xs text-gray-400 font-semibold uppercase tracking-wider">
           <span>Files Changed ({files.length})</span>
-          {parsedDiff && (
-            <span className="font-mono text-[11px]">
-              <strong className="text-emerald-400">+{parsedDiff.totalAdditions}</strong>{' '}
-              <strong className="text-rose-400">-{parsedDiff.totalDeletions}</strong>
-            </span>
-          )}
+          <div className="flex items-center gap-1.5">
+            {parsedDiff && (
+              <span className="font-mono text-[11px]">
+                <strong className="text-emerald-400">+{parsedDiff.totalAdditions}</strong>{' '}
+                <strong className="text-rose-400">-{parsedDiff.totalDeletions}</strong>
+              </span>
+            )}
+            {isMobileFileTreeOpen && (
+              <button
+                onClick={() => setIsMobileFileTreeOpen(false)}
+                className="md:hidden p-1 text-gray-400 hover:text-white"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto divide-y divide-gray-800/40">
@@ -77,7 +95,10 @@ export const DiffReviewer: React.FC<DiffReviewerProps> = ({
             return (
               <button
                 key={file.newPath || idx}
-                onClick={() => setActiveFileIndex(idx)}
+                onClick={() => {
+                  setActiveFileIndex(idx);
+                  setIsMobileFileTreeOpen(false);
+                }}
                 className={`w-full text-left p-2.5 text-xs flex items-center justify-between transition ${
                   isSelected ? 'bg-gray-800 text-white font-medium' : 'text-gray-400 hover:bg-gray-900 hover:text-gray-200'
                 }`}
@@ -99,33 +120,49 @@ export const DiffReviewer: React.FC<DiffReviewerProps> = ({
       {/* Main Diff Content */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Top Control Bar */}
-        <div className="h-10 border-b border-gray-800 bg-[#0f172a] px-4 flex items-center justify-between text-xs">
-          <div className="flex items-center gap-2 font-mono text-slate-300">
-            <span className="font-semibold text-slate-100">{currentFile.newPath || currentFile.oldPath}</span>
-            <span className="text-gray-500">|</span>
-            <span className="text-emerald-400">+{currentFile.additions}</span>
-            <span className="text-rose-400">-{currentFile.deletions}</span>
+        <div className="h-10 border-b border-gray-800 bg-[#0f172a] px-3 sm:px-4 flex items-center justify-between text-xs">
+          <div className="flex items-center gap-2 font-mono text-slate-300 min-w-0">
+            <button
+              onClick={() => setIsMobileFileTreeOpen(true)}
+              className="md:hidden flex items-center gap-1 px-1.5 py-0.5 rounded bg-gray-800 text-blue-400 text-[11px] shrink-0"
+            >
+              <FileCode className="w-3 h-3" />
+              <span>Files</span>
+            </button>
+            <span className="font-semibold text-slate-100 truncate">{currentFile.newPath || currentFile.oldPath}</span>
+            <span className="text-gray-500 hidden sm:inline">|</span>
+            <span className="text-emerald-400 shrink-0">+{currentFile.additions}</span>
+            <span className="text-rose-400 shrink-0">-{currentFile.deletions}</span>
           </div>
 
-          <div className="flex items-center gap-1 bg-gray-900 p-0.5 rounded border border-gray-800">
+          <div className="flex items-center gap-1.5">
             <button
-              onClick={() => setViewMode('unified')}
-              className={`flex items-center gap-1 px-2.5 py-1 rounded text-xs transition ${
-                viewMode === 'unified' ? 'bg-blue-600 text-white font-medium' : 'text-gray-400 hover:text-white'
-              }`}
+              onClick={() => setIsMobileSuggestionsOpen(true)}
+              className="xl:hidden flex items-center gap-1 px-2 py-0.5 rounded bg-gray-800 hover:bg-gray-700 text-blue-400 text-[11px] border border-gray-700"
             >
-              <AlignJustify className="w-3 h-3" />
-              <span>Unified</span>
+              <span>Notes ({annotations.filter((a) => a.type === 'suggestion').length})</span>
             </button>
-            <button
-              onClick={() => setViewMode('split')}
-              className={`flex items-center gap-1 px-2.5 py-1 rounded text-xs transition ${
-                viewMode === 'split' ? 'bg-blue-600 text-white font-medium' : 'text-gray-400 hover:text-white'
-              }`}
-            >
-              <Columns className="w-3 h-3" />
-              <span>Split</span>
-            </button>
+
+            <div className="flex items-center gap-1 bg-gray-900 p-0.5 rounded border border-gray-800">
+              <button
+                onClick={() => setViewMode('unified')}
+                className={`flex items-center gap-1 px-2 sm:px-2.5 py-1 rounded text-xs transition ${
+                  viewMode === 'unified' ? 'bg-blue-600 text-white font-medium' : 'text-gray-400 hover:text-white'
+                }`}
+              >
+                <AlignJustify className="w-3 h-3" />
+                <span className="hidden sm:inline">Unified</span>
+              </button>
+              <button
+                onClick={() => setViewMode('split')}
+                className={`flex items-center gap-1 px-2 sm:px-2.5 py-1 rounded text-xs transition ${
+                  viewMode === 'split' ? 'bg-blue-600 text-white font-medium' : 'text-gray-400 hover:text-white'
+                }`}
+              >
+                <Columns className="w-3 h-3" />
+                <span className="hidden sm:inline">Split</span>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -246,10 +283,26 @@ export const DiffReviewer: React.FC<DiffReviewerProps> = ({
       </div>
 
       {/* Code Suggestions Sidebar */}
-      <div className="w-80 border-l border-gray-800 bg-[#0c1220] p-4 overflow-y-auto hidden xl:block">
-        <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-          Suggestions ({annotations.filter((a) => a.type === 'suggestion').length})
-        </h4>
+      <div
+        className={`border-l border-gray-800 bg-[#0c1220] p-4 overflow-y-auto transition-all ${
+          isMobileSuggestionsOpen
+            ? 'fixed inset-y-14 right-0 z-40 w-80 shadow-2xl block'
+            : 'hidden xl:block w-80'
+        }`}
+      >
+        <div className="flex items-center justify-between mb-3">
+          <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+            Suggestions ({annotations.filter((a) => a.type === 'suggestion').length})
+          </h4>
+          {isMobileSuggestionsOpen && (
+            <button
+              onClick={() => setIsMobileSuggestionsOpen(false)}
+              className="xl:hidden p-1 text-gray-400 hover:text-white"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
 
         {annotations.filter((a) => a.type === 'suggestion').length === 0 ? (
           <p className="text-xs text-gray-400 italic">
