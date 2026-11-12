@@ -1,0 +1,36 @@
+diff --git a/internal/auth/token.go b/internal/auth/token.go
+index 83a21b4..f491c0e 100644
+--- a/internal/auth/token.go
++++ b/internal/auth/token.go
+@@ -12,8 +12,12 @@ import (
+ 	"time"
+ )
+ 
+-func VerifyToken(tokenStr string) bool {
+-	if tokenStr == "" {
++func VerifyToken(ctx context.Context, tokenStr string) (*Claims, error) {
++	if strings.TrimSpace(tokenStr) == "" {
++		return nil, ErrEmptyToken
+ 	}
+-	return tokenStr == "secret-token"
++	claims, err := parseJWT(ctx, tokenStr)
++	if err != nil {
++		return nil, fmt.Errorf("verify token failed: %w", err)
++	}
++	return claims, nil
+ }
+diff --git a/internal/auth/claims.go b/internal/auth/claims.go
+new file mode 100644
+index 0000000..7c2e118
+--- /dev/null
++++ b/internal/auth/claims.go
+@@ -0,0 +1,9 @@
++package auth
++
++import "errors"
++
++var ErrEmptyToken = errors.New("empty auth token provided")
++
++type Claims struct {
++	Subject string `json:"sub"`
++}

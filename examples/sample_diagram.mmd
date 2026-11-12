@@ -1,0 +1,13 @@
+sequenceDiagram
+    autonumber
+    actor Developer
+    participant Agent as AI Coding Agent
+    participant PlanMark as PlanMark Local Studio
+    participant FS as Local Filesystem
+
+    Agent->>PlanMark: Request review (plan.md / diff)
+    PlanMark->>Developer: Open browser & show visual canvas
+    Developer->>PlanMark: Add highlights, strikethroughs & gutter suggestions
+    Developer->>PlanMark: Click [Submit Feedback]
+    PlanMark-->>Agent: Emit surgical patch packet (ORIGINAL/PROPOSED/RATIONALE)
+    Agent->>FS: Apply deterministic edits with 100% precision

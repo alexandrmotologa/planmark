@@ -1,0 +1,37 @@
+# Binaries
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+/planmark
+
+
+# Test and coverage artifacts
+*.out
+*.test
+coverage.txt
+
+# Node / Frontend
+web/node_modules/
+web/.pnpm-store/
+web/.vite/
+
+
+# OS and Editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*~
+
+# Local work and environment
+.env
+.env.local
+.claude/
+.gemini/
+.codexrc
+.aider.conf.yml
+
